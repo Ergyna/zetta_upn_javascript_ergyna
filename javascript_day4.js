@@ -12,67 +12,32 @@ const users = [
   { id: 2, username: 'user2', password: 'password2' }
 ];
 
-function generateToken(user) {
-  return jwt.sign({ userId: user.id }, 'secretkey', { expiresIn: '1h' });
-}
-
 function authenticate(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) {
+  const token = req.headers.authorization;
+  if (!token) {
     return res.status(401).json({ message: 'Unauthorized' });
   }
-
-  const [username, password] = Buffer.from(authHeader.split(' ')[1], 'base64').toString().split(':');
-  const user = users.find(u => u.username === username && u.password === password);
-
-  if (!user) {
-    return res.status(401).json({ message: 'Invalid credentials' });
-  }
-
-  req.user = user;
-  next();
-}
-
-function calculateCreditTerm(price, creditTerm, additionalPriceTerms) {
-  return new Promise((resolve, reject) => {
-    setTimeout(() => {
-      const creditPrice = price / creditTerm;
-      const termPrices = [];
-
-      for (let i = 0; i < creditTerm; i++) {
-        let termPrice = creditPrice;
-
-        const additionalPrice = additionalPriceTerms.find(term => term.term === (i + 1));
-        if (additionalPrice) {
-          termPrice += additionalPrice.price;
-        }
-
-        termPrices.push({
-          term: i + 1,
-          price: termPrice.toFixed(2)
-        });
-      }
-
-      resolve(termPrices);
-    }, 1000); 
+  jwt.verify(token, 'secret', (err, decoded) => {
+    if (err) {
+      return res.status(401).json({ message: 'Invalid token' });
+    }
+    req.user = decoded;
+    next();
   });
 }
 
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
-
   const user = users.find((user) => user.username === username && user.password === password);
   if (!user) {
     return res.status(401).json({ message: 'Invalid credentials' });
   }
-
-  const token = generateToken(user);
-
+  const token = jwt.sign({ username: user.username }, 'secret');
   return res.status(200).json({ message: 'Login successful', token });
 });
 
-app.post('/purchase', authenticate, async (req, res) => {
-  const { detailBuku, harga, diskon, taxPercentage, creditTerm, additionalPriceTerms } = req.body;
+app.post('/purchase', authenticate, (req, res) => {
+  const { detailBuku, harga, diskon, taxPercentage, creditTerm } = req.body;
   const DISCOUNT_DIVISOR = 100;
   const TAX_DIVISOR = 100;
 
@@ -84,7 +49,6 @@ app.post('/purchase', authenticate, async (req, res) => {
   if (taxPercentage > 0) {
     isTaxIncluded = true;
   }
-
   let priceAfterTax;
   if (isTaxIncluded) {
     priceAfterTax = priceAfterDiscount;
@@ -92,43 +56,122 @@ app.post('/purchase', authenticate, async (req, res) => {
     priceAfterTax = priceAfterDiscount + taxAmount;
   }
 
-  try {
-    const creditTermPrices = await calculateCreditTerm(priceAfterTax, creditTerm, additionalPriceTerms);
+  let creditPrice = priceAfterTax / creditTerm;
 
-    console.log("Book Details:");
-    console.log("bookDetails:", detailBuku);
-    console.log("Price:", harga);
+  console.log("Book Details:");
+  console.log("bookDetails:", detailBuku);
+  console.log("Price:", harga);
 
-    console.log("Discount Information:");
-    console.log("Discount Percent:", diskon);
-    console.log("Discount Amount:", discountAmount);
-    console.log("Price After Discount:", priceAfterDiscount);
+  console.log("Discount Information:");
+  console.log("Discount Percent:", diskon);
+  console.log("Discount Amount:", discountAmount);
+  console.log("Price After Discount:", priceAfterDiscount);
 
-    console.log("Tax Information:");
-    console.log("Tax Percent:", taxPercentage);
-    console.log("Tax Amount:", taxAmount);
-    console.log("Price After Tax:", priceAfterTax);
+  console.log("Tax Information:");
+  console.log("Tax Percent:", taxPercentage);
+  console.log("Tax Amount:", taxAmount);
+  console.log("Price After Tax:", priceAfterTax);
 
-    console.log("Credit Term Information:");
-    console.log("Credit Term:", creditTerm);
-    console.log("Credit Term Prices:", creditTermPrices);
+  console.log("Credit Information:");
+  console.log("Credit Term:", creditTerm);
+  console.log("Price per Term:", creditPrice);
 
-    res.status(200).json({
-      message: 'Purchase successful',
-      bookDetails: detailBuku,
-      price: harga,
-      discountPercent: diskon,
-      discountAmount: discountAmount,
-      priceAfterDiscount: priceAfterDiscount,
-      taxPercent: taxPercentage,
-      taxAmount: taxAmount,
-      priceAfterTax: priceAfterTax,
-      creditTerm: creditTerm,
-      creditTermPrices: creditTermPrices
+  let creditDue = [];
+  for (let i = 0; i < creditTerm; i++) {
+    creditDue.push({
+      month: i + 1,
+      amount: creditPrice.toFixed(2),
     });
-  } catch (error) {
-    res.status(500).json({ message: 'Error processing purchase' });
   }
+
+  console.log("Credit Due Every Month:");
+  console.log(creditDue);
+
+  return res.status(200).json({ message: 'Purchase successful' });
+});
+
+app.post('/addBooks', authenticate, (req, res) => {
+  const { books } = req.body;
+  const bookSet = new Set();
+  const bookMap = new Map();
+
+  books.forEach((book) => {
+    bookSet.add(book.title);
+    bookMap.set(book.title, book);
+  });
+
+  const response = {
+    message: 'Books added successfully',
+    bookSet: Array.from(bookSet),
+    bookMap: Array.from(bookMap.entries()),
+  };
+
+  return res.status(200).json(response);
+});
+
+app.listen(port, () => {
+  console.log(`Server is running on port ${port}`);
+});
+const express = require('express');
+const bodyParser = require('body-parser');
+const jwt = require('jsonwebtoken');
+
+const app = express();
+const port = 3000;
+
+app.use(bodyParser.json());
+
+const users = [
+  { id: 1, username: 'user1', password: 'password1' },
+  { id: 2, username: 'user2', password: 'password2' }
+];
+
+function authenticate(req, res, next) {
+  const token = req.headers.authorization;
+
+  if (!token) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
+  jwt.verify(token, 'secret', (err, decoded) => {
+    if (err) {
+      return res.status(401).json({ message: 'Invalid token' });
+    }
+
+    req.user = decoded;
+    next();
+  });
+}
+
+app.post('/login', (req, res) => {
+  const { username, password } = req.body;
+
+  const user = users.find((user) => user.username === username && user.password === password);
+  if (!user) {
+    return res.status(401).json({ message: 'Invalid credentials' });
+  }
+
+  const token = jwt.sign({ username: user.username }, 'secret');
+  return res.status(200).json({ message: 'Login successful', token });
+});
+
+app.post('/addBooks', authenticate, (req, res) => {
+  const { books } = req.body;
+  const bookSet = new Set();
+  const bookMap = new Map();
+
+  books.forEach((book) => {
+    bookSet.add(book.title);
+    bookMap.set(book.title, book);
+  });
+
+  const response = {
+    message: 'Books added successfully',
+    bookSet: Array.from(bookSet),
+    bookMap: Array.from(bookMap.entries()),
+  };
+
+  return res.status(200).json(response);
 });
 
 app.listen(port, () => {
