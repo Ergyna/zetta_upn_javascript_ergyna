@@ -33,7 +33,35 @@ const bookSchema = new mongoose.Schema({
 });
 const Book = mongoose.model('Book', bookSchema);
 
+// Bookshelf model
+const bookshelfSchema = new mongoose.Schema({
+  bookIds: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Book',
+  }],
+});
+const Bookshelf = mongoose.model('Bookshelf', bookshelfSchema);
+
 // Routes
+
+// Authentication middleware
+const authenticate = (req, res, next) => {
+  const token = req.headers.authorization;
+
+  if (!token) {
+    return res.status(401).json({ message: 'No token provided' });
+  }
+
+  jwt.verify(token, 'secret', (err, decoded) => {
+    if (err) {
+      return res.status(401).json({ message: 'Invalid token' });
+    }
+    req.user = decoded;
+    next();
+  });
+};
+
+// Login route
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
 
@@ -47,6 +75,7 @@ app.post('/login', (req, res) => {
   return res.status(200).json({ message: 'Login successful', token });
 });
 
+// Purchase route
 app.post('/purchase', authenticate, (req, res) => {
   const { detailBuku, harga, diskon, taxPercentage, creditTerm } = req.body;
   const DISCOUNT_DIVISOR = 100;
@@ -136,6 +165,75 @@ app.delete('/books/:id', async (req, res) => {
 
     await book.remove();
     res.json({ message: 'Book deleted' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Create a bookshelf
+app.post('/bookshelves', async (req, res) => {
+  const bookshelf = new Bookshelf({
+    bookIds: req.body.bookIds,
+  });
+
+  try {
+    const newBookshelf = await bookshelf.save();
+    res.status(201).json(newBookshelf);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// Get all bookshelves
+app.get('/bookshelves', async (req, res) => {
+  try {
+    const bookshelves = await Bookshelf.find();
+    res.json(bookshelves);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Get a single bookshelf by ID
+app.get('/bookshelves/:id', async (req, res) => {
+  try {
+    const bookshelf = await Bookshelf.findById(req.params.id);
+    if (!bookshelf) {
+      return res.status(404).json({ message: 'Bookshelf not found' });
+    }
+    res.json(bookshelf);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Update a bookshelf
+app.put('/bookshelves/:id', async (req, res) => {
+  try {
+    const bookshelf = await Bookshelf.findById(req.params.id);
+    if (!bookshelf) {
+      return res.status(404).json({ message: 'Bookshelf not found' });
+    }
+
+    bookshelf.bookIds = req.body.bookIds || bookshelf.bookIds;
+
+    const updatedBookshelf = await bookshelf.save();
+    res.json(updatedBookshelf);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Delete a bookshelf
+app.delete('/bookshelves/:id', async (req, res) => {
+  try {
+    const bookshelf = await Bookshelf.findById(req.params.id);
+    if (!bookshelf) {
+      return res.status(404).json({ message: 'Bookshelf not found' });
+    }
+
+    await bookshelf.remove();
+    res.json({ message: 'Bookshelf deleted' });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
