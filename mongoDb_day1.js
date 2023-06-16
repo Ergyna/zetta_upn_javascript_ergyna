@@ -242,3 +242,50 @@ app.delete('/bookshelves/:id', async (req, res) => {
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 });
+
+// Get bookshelves with filtered books using elemMatch
+app.get('/bookshelves/filtered-books/:genre', async (req, res) => {
+  try {
+    const genre = req.params.genre;
+
+    const bookshelves = await Bookshelf.find({
+      bookIds: { $elemMatch: { genre: genre } }
+    });
+
+    res.json(bookshelves);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Update a bookshelf and its books using arrayFilters
+app.put('/bookshelves/:id/update-books', async (req, res) => {
+  try {
+    const bookshelf = await Bookshelf.findById(req.params.id);
+    if (!bookshelf) {
+      return res.status(404).json({ message: 'Bookshelf not found' });
+    }
+
+    const bookIds = req.body.bookIds;
+
+    await Bookshelf.updateOne(
+      { _id: req.params.id },
+      { $set: { bookIds: bookIds } },
+      { arrayFilters: [{ 'elem._id': { $in: bookIds } }] }
+    );
+
+    res.json({ message: 'Bookshelf updated' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Get distinct genres of books
+app.get('/books/genres', async (req, res) => {
+  try {
+    const genres = await Book.distinct('genre');
+    res.json(genres);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
