@@ -289,3 +289,62 @@ app.get('/books/genres', async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 });
+
+// Get all books with projection query
+app.get('/books/projection', async (req, res) => {
+  try {
+    const books = await Book.find({}, 'title author');
+    res.json(books);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Get all books with addFields query
+app.get('/books/addFields', async (req, res) => {
+  try {
+    const books = await Book.aggregate([
+      {
+        $addFields: {
+          isNewRelease: { $cond: [{ $gte: ['$price', 50] }, true, false] },
+        },
+      },
+    ]);
+    res.json(books);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Unwind books in a bookshelf
+app.get('/bookshelves/:id/unwind', async (req, res) => {
+  try {
+    const bookshelf = await Bookshelf.findById(req.params.id);
+    if (!bookshelf) {
+      return res.status(404).json({ message: 'Bookshelf not found' });
+    }
+
+    const books = await Book.aggregate([
+      {
+        $match: {
+          _id: { $in: bookshelf.bookIds },
+        },
+      },
+      {
+        $unwind: '$bookIds',
+      },
+      {
+        $project: {
+          title: 1,
+          author: 1,
+          price: 1,
+          bookshelfId: '$_id',
+        },
+      },
+    ]);
+
+    res.json(books);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
