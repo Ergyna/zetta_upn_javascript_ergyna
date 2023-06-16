@@ -120,7 +120,7 @@ app.get('/books/:id', async (req, res) => {
   }
 });
 
-// Create a book
+// Create a new book
 app.post('/books', async (req, res) => {
   const book = new Book({
     title: req.body.title,
@@ -144,14 +144,14 @@ app.put('/books/:id', async (req, res) => {
       return res.status(404).json({ message: 'Book not found' });
     }
 
-    book.title = req.body.title || book.title;
-    book.author = req.body.author || book.author;
-    book.price = req.body.price || book.price;
+    book.title = req.body.title;
+    book.author = req.body.author;
+    book.price = req.body.price;
 
     const updatedBook = await book.save();
     res.json(updatedBook);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(400).json({ message: error.message });
   }
 });
 
@@ -170,181 +170,81 @@ app.delete('/books/:id', async (req, res) => {
   }
 });
 
-// Create a bookshelf
-app.post('/bookshelves', async (req, res) => {
-  const bookshelf = new Bookshelf({
-    bookIds: req.body.bookIds,
-  });
-
+// Get books with match query
+app.get('/books/match', async (req, res) => {
   try {
-    const newBookshelf = await bookshelf.save();
-    res.status(201).json(newBookshelf);
-  } catch (error) {
-    res.status(400).json({ message: error.message });
-  }
-});
+    const { title } = req.query;
 
-// Get all bookshelves
-app.get('/bookshelves', async (req, res) => {
-  try {
-    const bookshelves = await Bookshelf.find();
-    res.json(bookshelves);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
-
-// Get a single bookshelf by ID
-app.get('/bookshelves/:id', async (req, res) => {
-  try {
-    const bookshelf = await Bookshelf.findById(req.params.id);
-    if (!bookshelf) {
-      return res.status(404).json({ message: 'Bookshelf not found' });
-    }
-    res.json(bookshelf);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
-
-// Update a bookshelf
-app.put('/bookshelves/:id', async (req, res) => {
-  try {
-    const bookshelf = await Bookshelf.findById(req.params.id);
-    if (!bookshelf) {
-      return res.status(404).json({ message: 'Bookshelf not found' });
-    }
-
-    bookshelf.bookIds = req.body.bookIds || bookshelf.bookIds;
-
-    const updatedBookshelf = await bookshelf.save();
-    res.json(updatedBookshelf);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
-
-// Delete a bookshelf
-app.delete('/bookshelves/:id', async (req, res) => {
-  try {
-    const bookshelf = await Bookshelf.findById(req.params.id);
-    if (!bookshelf) {
-      return res.status(404).json({ message: 'Bookshelf not found' });
-    }
-
-    await bookshelf.remove();
-    res.json({ message: 'Bookshelf deleted' });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
-
-app.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
-});
-
-// Get bookshelves with filtered books using elemMatch
-app.get('/bookshelves/filtered-books/:genre', async (req, res) => {
-  try {
-    const genre = req.params.genre;
-
-    const bookshelves = await Bookshelf.find({
-      bookIds: { $elemMatch: { genre: genre } }
+    const books = await Book.find({
+      title: { $regex: title, $options: 'i' },
     });
 
+    res.json(books);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Get sorted books
+app.get('/books/sort', async (req, res) => {
+  try {
+    const { sortBy } = req.query;
+
+    const sortOptions = {
+      title: 'title',
+      author: 'author',
+      price: 'price',
+    };
+
+    const books = await Book.find().sort(sortOptions[sortBy]);
+
+    res.json(books);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Concatenate fields in books
+app.get('/books/concat', async (req, res) => {
+  try {
+    const books = await Book.aggregate([
+      {
+        $project: {
+          _id: 0,
+          bookInfo: {
+            $concat: ['$title', ' - ', '$author'],
+          },
+        },
+      },
+    ]);
+
+    res.json(books);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Lookup bookshelves with books
+app.get('/bookshelves/lookup', async (req, res) => {
+  try {
+    const bookshelves = await Bookshelf.aggregate([
+      {
+        $lookup: {
+          from: 'books',
+          localField: 'bookIds',
+          foreignField: '_id',
+          as: 'books',
+        },
+      },
+    ]);
+
     res.json(bookshelves);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 });
 
-// Update a bookshelf and its books using arrayFilters
-app.put('/bookshelves/:id/update-books', async (req, res) => {
-  try {
-    const bookshelf = await Bookshelf.findById(req.params.id);
-    if (!bookshelf) {
-      return res.status(404).json({ message: 'Bookshelf not found' });
-    }
-
-    const bookIds = req.body.bookIds;
-
-    await Bookshelf.updateOne(
-      { _id: req.params.id },
-      { $set: { bookIds: bookIds } },
-      { arrayFilters: [{ 'elem._id': { $in: bookIds } }] }
-    );
-
-    res.json({ message: 'Bookshelf updated' });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
-
-// Get distinct genres of books
-app.get('/books/genres', async (req, res) => {
-  try {
-    const genres = await Book.distinct('genre');
-    res.json(genres);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
-
-// Get all books with projection query
-app.get('/books/projection', async (req, res) => {
-  try {
-    const books = await Book.find({}, 'title author');
-    res.json(books);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
-
-// Get all books with addFields query
-app.get('/books/addFields', async (req, res) => {
-  try {
-    const books = await Book.aggregate([
-      {
-        $addFields: {
-          isNewRelease: { $cond: [{ $gte: ['$price', 50] }, true, false] },
-        },
-      },
-    ]);
-    res.json(books);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
-
-// Unwind books in a bookshelf
-app.get('/bookshelves/:id/unwind', async (req, res) => {
-  try {
-    const bookshelf = await Bookshelf.findById(req.params.id);
-    if (!bookshelf) {
-      return res.status(404).json({ message: 'Bookshelf not found' });
-    }
-
-    const books = await Book.aggregate([
-      {
-        $match: {
-          _id: { $in: bookshelf.bookIds },
-        },
-      },
-      {
-        $unwind: '$bookIds',
-      },
-      {
-        $project: {
-          title: 1,
-          author: 1,
-          price: 1,
-          bookshelfId: '$_id',
-        },
-      },
-    ]);
-
-    res.json(books);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
+// Start the server
+app.listen(port, () => {
+  console.log(`Server is running on port ${port}`);
 });
